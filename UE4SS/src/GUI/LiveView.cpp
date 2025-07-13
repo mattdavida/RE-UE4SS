@@ -19,6 +19,8 @@
 #include <GUI/LiveView/Filter/FunctionParamFlags.hpp>
 #include <GUI/LiveView/Filter/HasProperty.hpp>
 #include <GUI/LiveView/Filter/HasPropertyType.hpp>
+#include <GUI/LiveView/Filter/ContainsProperty.hpp>
+
 #include <GUI/LiveView/Filter/IncludeDefaultObjects.hpp>
 #include <GUI/LiveView/Filter/InstancesOnly.hpp>
 #include <GUI/LiveView/Filter/NonInstancesOnly.hpp>
@@ -61,7 +63,8 @@ namespace RC::GUI
                                               Filter::FunctionParamFlags,
                                               Filter::ClassNamesFilter,
                                               Filter::HasProperty,
-                                              Filter::HasPropertyType>{};
+                                              Filter::HasPropertyType,
+                                              Filter::ContainsProperty>{};
 
     static bool s_live_view_destructed = false;
     static std::unordered_map<const UObject*, std::string> s_object_ptr_to_full_name{};
@@ -75,6 +78,7 @@ namespace RC::GUI
     std::vector<UObject*> LiveView::s_name_search_results{};
     std::unordered_set<UObject*> LiveView::s_name_search_results_set{};
     std::string LiveView::s_name_to_search_by{};
+    std::string LiveView::s_property_search_term{};
     std::vector<std::unique_ptr<LiveView::Watch>> LiveView::s_watches{};
     std::unordered_map<LiveView::WatchIdentifier, LiveView::Watch*> LiveView::s_watch_map;
     std::unordered_map<void*, std::vector<LiveView::Watch*>> LiveView::s_watch_containers{};
@@ -89,6 +93,12 @@ namespace RC::GUI
     bool LiveView::s_use_regex_for_search{};
 
     static LiveView* s_live_view{};
+
+    // Property search state
+    static constexpr size_t s_property_search_buffer_capacity = 2000;
+    static char* s_property_search_buffer = nullptr;
+    static bool s_property_search_field_clear_requested = false;
+    static bool s_property_search_field_cleared = false;
 
     // Deferred popup state for property value editing
     struct DeferredPropertyEditPopup
@@ -117,6 +127,8 @@ namespace RC::GUI
     static DeferredEnumEditPopup s_deferred_enum_edit_popup{};
 
     static auto get_object_full_name_cxx_string(UObject* object) -> std::string;
+    static auto property_search_field_always_callback(ImGuiInputTextCallbackData* data) -> int;
+    static auto property_matches_search(FProperty* property) -> bool;
 
     static auto filter_out_objects(UObject* object) -> bool
     {
@@ -1724,6 +1736,10 @@ namespace RC::GUI
                   m_default_search_buffer.data(),
                   m_default_search_buffer.size() + sizeof(char));
 
+        // Initialize property search buffer
+        s_property_search_buffer = new char[s_property_search_buffer_capacity];
+        s_property_search_buffer[0] = '\0'; // Initialize as empty string
+
         s_live_view = this;
     }
 
@@ -1741,6 +1757,7 @@ namespace RC::GUI
         }
 
         delete[] m_search_by_name_buffer;
+        delete[] s_property_search_buffer;
         delete m_function_caller_widget;
     }
 
@@ -1847,6 +1864,7 @@ namespace RC::GUI
             attempt_to_add_search_result(object);
             return LoopAction::Continue;
         });
+        Output::send(STR("Search complete\n"));
     }
 
     auto LiveView::collapse_all_except(void* except_id) -> void
@@ -1882,6 +1900,7 @@ namespace RC::GUI
                 s_name_to_search_by.clear();
                 m_object_iterator = &LiveView::guobjectarray_iterator;
                 m_is_searching_by_name = false;
+                Output::send(STR("Search complete\n"));
             }
             else
             {
@@ -2093,6 +2112,10 @@ namespace RC::GUI
         auto render_property_value_context_menu = [&](std::string_view id_override = "") {
             if (ImGui::BeginPopupContextItem(id_override.empty() ? property_name.c_str() : fmt::format("context-menu-{}", id_override).c_str()))
             {
+                // Property context menu header
+                ImGui::Text("%s", property_name.c_str());
+                ImGui::Separator();
+                
                 if (ImGui::MenuItem("Copy name"))
                 {
                     ImGui::SetClipboardText(property_name.c_str());
@@ -2540,6 +2563,8 @@ namespace RC::GUI
         else
         {
             ImGui::Separator();
+            
+            // Prepare properties list
             for (FProperty* property : uclass->ForEachProperty())
             {
                 all_properties.emplace_back(OrderedProperty{property->GetOffset_Internal(), uclass, property});
@@ -2559,7 +2584,11 @@ namespace RC::GUI
 
             for (const auto& ordered_property : all_properties)
             {
+                // Apply property search filter
+                if (property_matches_search(ordered_property.property))
+            {
                 render_property_text(static_cast<UClass*>(ordered_property.owner), ordered_property.property);
+                }
             }
 
             if (tried_to_open_nullptr_object)
@@ -3030,7 +3059,26 @@ namespace RC::GUI
         {
             ImGui::EndDisabled();
         }
+
+        // Property search input field
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(200.0f);
+        if (ImGui::InputText("##property_search", 
+                             s_property_search_buffer, 
+                             s_property_search_buffer_capacity,
+                             ImGuiInputTextFlags_CallbackAlways,
+                             &property_search_field_always_callback,
+                             nullptr))
+        {
+            // Enter key pressed or focus lost - could be used for search activation later
+        }
+        ImGui::SameLine();
+        ImGui::Text("Search properties");
+
         ImGui::Separator();
+
+        // Create scrollable child window for everything below the navigation bar
+        ImGui::BeginChild("InfoPanelScrollable", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
 
         if (currently_selected_object.is_object)
         {
@@ -3040,6 +3088,8 @@ namespace RC::GUI
         {
             render_info_panel_as_property(currently_selected_object.property);
         }
+
+        ImGui::EndChild();
 
         ImGui::EndChild();
 
@@ -3067,6 +3117,43 @@ namespace RC::GUI
             typed_this->set_search_field_cleared(true);
         }
         return 1;
+    }
+
+    static auto property_search_field_always_callback(ImGuiInputTextCallbackData* data) -> int
+    {
+        if (s_property_search_field_clear_requested && !s_property_search_field_cleared)
+        {
+            strncpy_s(data->Buf, 1, "", 1);
+            data->BufTextLen = 0;
+            data->BufDirty = true;
+            s_property_search_field_cleared = true;
+        }
+        
+        // Update search term
+        LiveView::s_property_search_term = std::string(data->Buf);
+        
+        return 1;
+    }
+
+    static auto property_matches_search(FProperty* property) -> bool
+    {
+        if (LiveView::s_property_search_term.empty())
+        {
+            return true; // Show all properties if no search term
+        }
+        
+        auto property_name = to_string(property->GetName());
+        std::string search_term = LiveView::s_property_search_term;
+        
+        // Convert both to lowercase for case-insensitive search
+        std::transform(property_name.begin(), property_name.end(), property_name.begin(), [](char c) {
+            return std::tolower(c);
+        });
+        std::transform(search_term.begin(), search_term.end(), search_term.begin(), [](char c) {
+            return std::tolower(c);
+        });
+        
+        return property_name.find(search_term) != property_name.npos;
     }
 
     auto LiveView::process_property_watch(Watch& watch) -> void
@@ -3597,6 +3684,8 @@ namespace RC::GUI
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
                 ImGui::Checkbox("Use Regex for search", &s_use_regex_for_search);
+                ImGui::TableNextColumn();
+                // Removed Blueprint classes only checkbox - use FindClassNamesContaining("term", "filter") in Lua instead
 
                 // Row 5
                 ImGui::TableNextRow();
@@ -3684,8 +3773,21 @@ namespace RC::GUI
                     }
                 }
 
+                // Row 8
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
+                ImGui::Text("Contains property");
+                ImGui::TableNextColumn();
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+                if (ImGui::InputText("##ContainsProperty", &Filter::ContainsProperty::s_internal_search_term))
+                {
+                    // For now, just store the search term directly
+                    // Later we'll add case conversion and other processing here
+                }
+
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                
                 if (ImGui::Button(ICON_FA_SEARCH " Refresh search"))
                 {
                     search();

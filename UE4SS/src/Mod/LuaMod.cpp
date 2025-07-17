@@ -3494,6 +3494,54 @@ Overloads:
 
             return 1;
         });
+
+        lua.register_function("FindClassNamesContaining", [](const LuaMadeSimple::Lua& lua) -> int {
+            if (lua.get_stack_size() < 1)
+            {
+                lua.throw_error("Function 'FindClassNamesContaining' requires a search term string parameter.");
+            }
+
+            // Ensure first parameter is string
+            if (!lua.is_string(1))
+            {
+                lua.throw_error("Parameter #1 for function 'FindClassNamesContaining' must be a string");
+            }
+
+            constexpr int32_t elements_to_reserve = 40;
+            std::vector<Unreal::UObject*> found_unreal_objects;
+            found_unreal_objects.reserve(elements_to_reserve);
+            
+            std::string search_term = to_string(ensure_str(lua.get_string(1)));
+            Unreal::UObjectGlobals::FindClassNamesContaining(search_term, found_unreal_objects);
+
+            if (!found_unreal_objects.empty())
+            {
+                LuaMadeSimple::Lua::Table table = lua.prepare_new_table(elements_to_reserve);
+
+                for (size_t count{}; const auto& unreal_object : found_unreal_objects)
+                {
+                    // Increasing the count first, this is to accommodate the one-index based tables of Lua
+                    ++count;
+
+                    table.add_key(count);
+
+                    // Construct a Lua version of a UObject
+                    // It will be at the top of the Lua stack and can act as the value of a key/value pair if fuse_pair() is called
+                    LuaType::auto_construct_object(lua, unreal_object);
+                    table.fuse_pair();
+                }
+
+                table.make_local();
+            }
+            else
+            {
+                lua.set_nil();
+            }
+            
+            return 1;
+        });
+
+
     }
 
     auto LuaMod::setup_lua_global_functions(const LuaMadeSimple::Lua& lua) const -> void
@@ -4836,6 +4884,107 @@ Overloads:
                 stop_console_lua_executor();
                 start_console_lua_executor();
                 logln(STR("Console Lua executor restarted"));
+                return true;
+            }
+            else if (String::iequal(File::StringViewType{ToCharTypePtr(cmd)}, File::StringViewType{STR("help")}))
+            {
+                logln(STR("=== UE4SS Console Help ==="));
+                logln(STR(""));
+                logln(STR("Built-in Commands:"));
+                logln(STR("  help          - Show this help message"));
+                logln(STR("  help lua      - Show Lua API help"));
+                logln(STR("  help examples - Show usage examples"));
+                logln(STR("  luastart      - Start Lua console executor (execute Lua code directly)"));
+                logln(STR("  luastop       - Stop Lua console executor"));
+                logln(STR("  luarestart    - Restart Lua console executor"));
+                logln(STR("  clear         - Clear console output"));
+                logln(STR(""));
+                logln(STR("Mod Commands (via ConsoleCommandsMod):"));
+                logln(STR("  summon <AssetPath>              - Load and summon unloaded assets"));
+                logln(STR("  set <Class/Object> <Prop> <Val> - Set property values on objects/classes"));
+                logln(STR("  dump_object <ObjectName>        - Dump detailed object information"));
+                logln(STR(""));
+                logln(STR("Lua Console Mode:"));
+                logln(STR("  After 'luastart', execute any Lua code directly!"));
+                logln(STR("  Example: FindFirstOf('PlayerController'):GetPawn():SetActorLocation({X=100,Y=200,Z=300})"));
+                logln(STR(""));
+                logln(STR("For detailed API documentation, use 'help lua' or 'help examples'"));
+                return true;
+            }
+            else if (String::iequal(File::StringViewType{ToCharTypePtr(cmd)}, File::StringViewType{STR("help lua")}))
+            {
+                logln(STR("=== UE4SS Lua API Reference ==="));
+                logln(STR(""));
+                logln(STR("Core Object Functions:"));
+                logln(STR("  StaticFindObject(ObjectName)           - Find object by name"));
+                logln(STR("  FindFirstOf(ClassName)                 - Find first instance of class"));
+                logln(STR("  FindAllOf(ClassName)                   - Find all instances of class"));
+                logln(STR("  FindObjects(flags, ClassToFind, ...)   - Advanced object search"));
+                logln(STR(""));
+                logln(STR("Execution Functions:"));
+                logln(STR("  ExecuteInGameThread(function)          - Execute function on game thread"));
+                logln(STR("  ExecuteAsync(function)                 - Execute function asynchronously"));
+                logln(STR("  ExecuteWithDelay(delay, function)      - Execute after delay"));
+                logln(STR(""));
+                logln(STR("Hook & Event Functions:"));
+                logln(STR("  RegisterHook(FunctionName, Pre, Post)  - Hook UE function calls"));
+                logln(STR("  UnregisterHook(FunctionName, Pre, Post)- Remove hook"));
+                logln(STR("  RegisterKeyBind(Key, function)         - Bind key to function"));
+                logln(STR("  RegisterConsoleCommandHandler(cmd, fn) - Add custom console commands"));
+                logln(STR(""));
+                logln(STR("Dumper Functions:"));
+                logln(STR("  DumpAllObjects()                       - Dump all objects to file"));
+                logln(STR("  DumpStaticMeshes()                     - Dump static meshes to CSV"));
+                logln(STR("  DumpAllActors()                        - Dump all actors to CSV"));
+                logln(STR("  GenerateSDK()                          - Generate C++ SDK headers"));
+                logln(STR("  GenerateLuaTypes()                     - Generate Lua type definitions"));
+                logln(STR("  GenerateUHTCompatibleHeaders()         - Generate UHT headers"));
+                logln(STR(""));
+                logln(STR("Utility Classes:"));
+                logln(STR("  UE4SS.GetVersion()                     - Get UE4SS version"));
+                logln(STR("  UnrealVersion.GetMajor/Minor()         - Get UE version"));
+                logln(STR("  LoadAsset(AssetPath)                   - Load asset by path"));
+                logln(STR(""));
+                logln(STR("Use 'help examples' for practical usage examples!"));
+                return true;
+            }
+            else if (String::iequal(File::StringViewType{ToCharTypePtr(cmd)}, File::StringViewType{STR("help examples")}))
+            {
+                logln(STR("=== UE4SS Usage Examples ==="));
+                logln(STR(""));
+                logln(STR("1. Basic Object Manipulation:"));
+                logln(STR("   player = FindFirstOf('PlayerController'):GetPawn()"));
+                logln(STR("   player:SetActorLocation({X=100, Y=200, Z=300})"));
+                logln(STR(""));
+                logln(STR("2. Property Modification:"));
+                logln(STR("   set PlayerController MaxSpeed 1000"));
+                logln(STR("   -- or in Lua: player.MaxSpeed = 1000"));
+                logln(STR(""));
+                logln(STR("3. Custom Console Command:"));
+                logln(STR("   RegisterConsoleCommandHandler('tp', function(cmd, params)"));
+                logln(STR("     local x,y,z = tonumber(params[1]), tonumber(params[2]), tonumber(params[3])"));
+                logln(STR("     FindFirstOf('PlayerController'):GetPawn():SetActorLocation({X=x,Y=y,Z=z})"));
+                logln(STR("   end)"));
+                logln(STR(""));
+                logln(STR("4. Function Hooking:"));
+                logln(STR("   RegisterHook('/Script/Engine.PlayerController:ClientRestart',"));
+                logln(STR("     function(self) print('Player restarted!') end, function() end)"));
+                logln(STR(""));
+                logln(STR("5. Key Binding:"));
+                logln(STR("   RegisterKeyBind(Key.F1, function()"));
+                logln(STR("     print('F1 pressed!')"));
+                logln(STR("   end)"));
+                logln(STR(""));
+                logln(STR("6. Asset Loading:"));
+                logln(STR("   summon /Game/Characters/MyCharacter"));
+                logln(STR("   -- or: LoadAsset('/Game/Characters/MyCharacter')"));
+                logln(STR(""));
+                logln(STR("7. Getting Started:"));
+                logln(STR("   - Run 'luastart' to enable Lua execution"));
+                logln(STR("   - Try: print('Hello UE4SS!')"));
+                logln(STR("   - Explore: for i,obj in pairs(FindAllOf('Actor')) do print(obj:GetFullName()) end"));
+                logln(STR(""));
+                logln(STR("Remember: After 'luastart', any Lua code can be executed directly!"));
                 return true;
             }
             else if (String::iequal(File::StringViewType{ToCharTypePtr(cmd)}, File::StringViewType{STR("clear")}))

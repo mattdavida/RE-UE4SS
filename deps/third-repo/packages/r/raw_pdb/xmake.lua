@@ -10,7 +10,7 @@ package("raw_pdb")
         local configs = {}
         table.insert(configs, "-DCMAKE_BUILD_TYPE=" .. (package:debug() and "Debug" or "Release"))
         table.insert(configs, "-DBUILD_SHARED_LIBS=OFF")
-        import("package.tools.cmake").install(package, configs)
+        import("package.tools.cmake").build(package, configs)
 
         os.cp("src/*.h", package:installdir("include"))
         os.cp("src/Foundation/*.h", package:installdir("include/Foundation"))

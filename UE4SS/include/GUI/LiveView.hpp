@@ -128,6 +128,7 @@ namespace RC::GUI
         static std::vector<UObject*> s_name_search_results;
         static std::unordered_set<UObject*> s_name_search_results_set;
         static std::string s_name_to_search_by;
+        static std::string s_property_search_term;
         static std::vector<std::unique_ptr<Watch>> s_watches;
         static std::unordered_map<WatchIdentifier, Watch*> s_watch_map;
         static std::unordered_map<void*, std::vector<Watch*>> s_watch_containers;

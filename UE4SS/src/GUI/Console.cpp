@@ -132,6 +132,21 @@ namespace RC::GUI
         std::lock_guard<std::mutex> guard(m_lines_mutex);
         m_text_editor.Render("TextEditor", {-16.0f, -31.0f + -8.0f});
 
+        // Add right-click context menu for copying selected text
+        auto selected_text = m_text_editor.GetSelectedText();
+        if (!selected_text.empty() && ImGui::BeginPopupContextItem("ConsoleContextMenu"))
+        {
+            if (ImGui::MenuItem("Copy selected text"))
+            {
+                // Trim whitespace from start and end
+                auto trimmed_text = selected_text;
+                trimmed_text.erase(0, trimmed_text.find_first_not_of(" \t\n\r\f\v"));
+                trimmed_text.erase(trimmed_text.find_last_not_of(" \t\n\r\f\v") + 1);
+                ImGui::SetClipboardText(trimmed_text.c_str());
+            }
+            ImGui::EndPopup();
+        }
+
         ImGui_AutoScroll("TextEditor", &m_previous_max_scroll_y);
         //*/
     }

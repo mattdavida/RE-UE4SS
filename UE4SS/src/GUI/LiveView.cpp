@@ -20,6 +20,7 @@
 #include <GUI/LiveView/Filter/HasProperty.hpp>
 #include <GUI/LiveView/Filter/HasPropertyType.hpp>
 #include <GUI/LiveView/Filter/ContainsProperty.hpp>
+#include <GUI/LiveView/Filter/ObjectTypeFilter.hpp>
 
 #include <GUI/LiveView/Filter/IncludeDefaultObjects.hpp>
 #include <GUI/LiveView/Filter/InstancesOnly.hpp>
@@ -64,7 +65,8 @@ namespace RC::GUI
                                               Filter::ClassNamesFilter,
                                               Filter::HasProperty,
                                               Filter::HasPropertyType,
-                                              Filter::ContainsProperty>{};
+                                              Filter::ContainsProperty,
+                                              Filter::ObjectTypeFilter>{};
 
     static bool s_live_view_destructed = false;
     static std::unordered_map<const UObject*, std::string> s_object_ptr_to_full_name{};
@@ -384,6 +386,13 @@ namespace RC::GUI
             add_array_filter_to_json(json_filters, Filter::HasPropertyType::s_debug_name, Filter::HasPropertyType::list_property_types, STR("PropertyTypes"));
             add_array_filter_to_json(json_filters, Filter::FunctionParamFlags::s_debug_name, Filter::FunctionParamFlags::s_checkboxes, STR("FunctionParamFlags"));
         }
+        {
+            // String-based filters
+            auto& object_type_filter = json_filters.new_object();
+            object_type_filter.new_string(STR("FilterName"), Filter::ObjectTypeFilter::s_debug_name);
+            auto& filter_data = object_type_filter.new_object(STR("FilterData"));
+            filter_data.new_string(STR("ObjectType"), ensure_str(Filter::ObjectTypeFilter::s_internal_object_type));
+        }
 
         auto json_file = File::open(StringType{UE4SSProgram::get_program().get_working_directory()} + fmt::format(STR("\\liveview\\filters.meta.json")),
                                     File::OpenFor::Writing,
@@ -518,6 +527,10 @@ namespace RC::GUI
                     Filter::FunctionParamFlags::s_checkboxes[index] = flag.as<JSON::Bool>()->get();
                     return LoopAction::Continue;
                 });
+            }
+            else if (filter_name == Filter::ObjectTypeFilter::s_debug_name)
+            {
+                Filter::ObjectTypeFilter::s_internal_object_type = to_string(filter_data.get<JSON::String>(STR("ObjectType")).get_view());
             }
 
             return LoopAction::Continue;
@@ -3783,6 +3796,24 @@ namespace RC::GUI
                 {
                     // For now, just store the search term directly
                     // Later we'll add case conversion and other processing here
+                }
+
+                // Row 9 - Object Type Filter
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::Text("Object type");
+                ImGui::TableNextColumn();
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+                if (ImGui::InputText("##ObjectTypeFilter", &Filter::ObjectTypeFilter::s_internal_object_type))
+                {
+                    // Object type filter updated - search will apply automatically
+                }
+                if (ImGui::IsItemHovered())
+                {
+                    ImGui::BeginTooltip();
+                    ImGui::Text("Filter by object type (e.g., 'Class', 'Function', 'Package', 'Actor')");
+                    ImGui::Text("Case-insensitive partial matching");
+                    ImGui::EndTooltip();
                 }
 
                 ImGui::TableNextRow();

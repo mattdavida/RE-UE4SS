@@ -71,13 +71,40 @@ Overloads:
             return 1;
         });
 
+        table.add_pair("GetDisplayNameByValue", [](const LuaMadeSimple::Lua& lua) -> int {
+            std::string error_overload_not_found{R"(
+No overload found for function 'UEnum.GetDisplayNameByValue'.
+Overloads:
+#1: GetDisplayNameByValue(integer Value))"};
+
+            auto& lua_object = lua.get_userdata<UEnum>();
+
+            if (!lua.is_integer())
+            {
+                lua.throw_error(error_overload_not_found);
+            }
+
+            auto value = lua.get_integer();
+            auto display_name = lua_object.get_remote_cpp_object()->GetDisplayNameByValue(value);
+            lua.set_string(to_string(display_name).c_str());
+            return 1;
+        });
+
         table.add_pair("ForEachName", [](const LuaMadeSimple::Lua& lua) -> int {
             std::string error_overload_not_found{R"(
 No overload found for function 'UEnum.ForEachName'.
 Overloads:
-#1: ForEachName(LuaFunction Callback))"};
+#1: ForEachName(LuaFunction Callback)
+#2: ForEachName(LuaFunction Callback, boolean IncludeFriendlyNames))"};
 
             auto& lua_object = lua.get_userdata<UEnum>();
+
+            // Check if second parameter (IncludeFriendlyNames) is provided
+            bool include_friendly_names = false;
+            if (lua.get_stack_size() >= 2 && lua.is_bool(2))
+            {
+                include_friendly_names = lua.get_bool(2);
+            }
 
             for (auto& [name, value] : lua_object.get_remote_cpp_object()->ForEachName())
             {
@@ -90,7 +117,17 @@ Overloads:
                 // Set the 'Value' parameter for the Lua function (P2)
                 lua.set_integer(value);
 
-                lua.call_function(2, 1);
+                int num_params = 2;
+                
+                // Optionally set the 'FriendlyName' parameter for the Lua function (P3)
+                if (include_friendly_names)
+                {
+                    auto friendly_name = lua_object.get_remote_cpp_object()->GetDisplayNameByValue(value);
+                    lua.set_string(to_string(friendly_name).c_str());
+                    num_params = 3;
+                }
+
+                lua.call_function(num_params, 1);
 
                 // We explicitly specify index 2 because we duplicated the function earlier and that's located at index 1.
                 if (lua.is_bool(2) && lua.get_bool(2))

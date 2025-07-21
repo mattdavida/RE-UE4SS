@@ -1088,11 +1088,25 @@ local UEnum = {}
 ---@param Value integer
 function UEnum:GetNameByValue(Value) end
 
+--- Returns the display name (user-friendly name) that corresponds to the specified value.
+--- Falls back to the regular name if no display name metadata exists.
+---@param Value integer
+---@return string
+function UEnum:GetDisplayNameByValue(Value) end
+
 --- Iterates every `FName`, `Value` combination that belongs to this enum.
 --- The callback has two params: `FName Name`, `integer Value`.
 --- Return `true` in the callback to stop iterating.
 ---@param Callback function
 function UEnum:ForEachName(Callback) end
+
+--- Iterates every `FName`, `Value` combination that belongs to this enum.
+--- When IncludeFriendlyNames is true, the callback has three params: `FName Name`, `integer Value`, `string FriendlyName`.
+--- When IncludeFriendlyNames is false/nil, the callback has two params: `FName Name`, `integer Value`.
+--- Return `true` in the callback to stop iterating.
+---@param Callback function
+---@param IncludeFriendlyNames boolean?
+function UEnum:ForEachName(Callback, IncludeFriendlyNames) end
 
 --- Returns the `FName` and `Integer` value that coresponds the given `Index`.
 ---@param Index integer

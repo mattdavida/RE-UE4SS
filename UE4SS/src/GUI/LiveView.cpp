@@ -21,6 +21,7 @@
 #include <GUI/LiveView/Filter/HasPropertyType.hpp>
 #include <GUI/LiveView/Filter/ContainsProperty.hpp>
 #include <GUI/LiveView/Filter/ObjectTypeFilter.hpp>
+#include <GUI/LiveView/Filter/HasAnyProperties.hpp>
 
 #include <GUI/LiveView/Filter/IncludeDefaultObjects.hpp>
 #include <GUI/LiveView/Filter/InstancesOnly.hpp>
@@ -66,7 +67,8 @@ namespace RC::GUI
                                               Filter::HasProperty,
                                               Filter::HasPropertyType,
                                               Filter::ContainsProperty,
-                                              Filter::ObjectTypeFilter>{};
+                                              Filter::ObjectTypeFilter,
+                                              Filter::HasAnyProperties>{};
 
     static bool s_live_view_destructed = false;
     static std::unordered_map<const UObject*, std::string> s_object_ptr_to_full_name{};
@@ -379,6 +381,7 @@ namespace RC::GUI
             add_bool_filter_to_json(json_filters, Filter::IncludeDefaultObjects::s_debug_name, Filter::IncludeDefaultObjects::s_enabled);
             add_bool_filter_to_json(json_filters, Filter::InstancesOnly::s_debug_name, Filter::InstancesOnly::s_enabled);
             add_bool_filter_to_json(json_filters, Filter::NonInstancesOnly::s_debug_name, Filter::NonInstancesOnly::s_enabled);
+            add_bool_filter_to_json(json_filters, Filter::HasAnyProperties::s_debug_name, Filter::HasAnyProperties::s_enabled);
         }
         {
             add_array_filter_to_json(json_filters, Filter::ClassNamesFilter::s_debug_name, Filter::ClassNamesFilter::list_class_names, STR("ClassNames"));
@@ -490,6 +493,10 @@ namespace RC::GUI
             else if (filter_name == Filter::NonInstancesOnly::s_debug_name)
             {
                 Filter::NonInstancesOnly::s_enabled = filter_data.get<JSON::Bool>(STR("Enabled")).get();
+            }
+            else if (filter_name == Filter::HasAnyProperties::s_debug_name)
+            {
+                Filter::HasAnyProperties::s_enabled = filter_data.get<JSON::Bool>(STR("Enabled")).get();
             }
             else if (filter_name == Filter::ClassNamesFilter::s_debug_name)
             {
@@ -3698,7 +3705,13 @@ namespace RC::GUI
                 ImGui::TableNextColumn();
                 ImGui::Checkbox("Use Regex for search", &s_use_regex_for_search);
                 ImGui::TableNextColumn();
-                // Removed Blueprint classes only checkbox - use FindClassNamesContaining("term", "filter") in Lua instead
+                ImGui::Checkbox("Has any properties", &Filter::HasAnyProperties::s_enabled);
+                if (ImGui::IsItemHovered())
+                {
+                    ImGui::BeginTooltip();
+                    ImGui::Text("Only show objects that have properties (excludes empty containers)");
+                    ImGui::EndTooltip();
+                }
 
                 // Row 5
                 ImGui::TableNextRow();

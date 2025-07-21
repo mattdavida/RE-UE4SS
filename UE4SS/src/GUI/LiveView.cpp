@@ -20,6 +20,8 @@
 #include <GUI/LiveView/Filter/HasProperty.hpp>
 #include <GUI/LiveView/Filter/HasPropertyType.hpp>
 #include <GUI/LiveView/Filter/ContainsProperty.hpp>
+#include <GUI/LiveView/Filter/ClassFullnameContains.hpp>
+#include <GUI/LiveView/Filter/HidePreClearObjects.hpp>
 #include <GUI/LiveView/Filter/ObjectTypeFilter.hpp>
 #include <GUI/LiveView/Filter/HasAnyProperties.hpp>
 
@@ -40,6 +42,7 @@
 #include <Unreal/Property/FEnumProperty.hpp>
 #include <Unreal/Property/NumericPropertyTypes.hpp>
 #include <Unreal/UClass.hpp>
+
 #include <Unreal/UEnum.hpp>
 #include <Unreal/UFunction.hpp>
 #include <Unreal/UObject.hpp>
@@ -67,6 +70,8 @@ namespace RC::GUI
                                               Filter::HasProperty,
                                               Filter::HasPropertyType,
                                               Filter::ContainsProperty,
+                                              Filter::ClassFullnameContains,
+                                              Filter::HidePreClearObjects,
                                               Filter::ObjectTypeFilter,
                                               Filter::HasAnyProperties>{};
 
@@ -382,6 +387,7 @@ namespace RC::GUI
             add_bool_filter_to_json(json_filters, Filter::InstancesOnly::s_debug_name, Filter::InstancesOnly::s_enabled);
             add_bool_filter_to_json(json_filters, Filter::NonInstancesOnly::s_debug_name, Filter::NonInstancesOnly::s_enabled);
             add_bool_filter_to_json(json_filters, Filter::HasAnyProperties::s_debug_name, Filter::HasAnyProperties::s_enabled);
+            add_bool_filter_to_json(json_filters, Filter::HidePreClearObjects::s_debug_name, Filter::HidePreClearObjects::s_enabled);
         }
         {
             add_array_filter_to_json(json_filters, Filter::ClassNamesFilter::s_debug_name, Filter::ClassNamesFilter::list_class_names, STR("ClassNames"));
@@ -396,6 +402,21 @@ namespace RC::GUI
             auto& filter_data = object_type_filter.new_object(STR("FilterData"));
             filter_data.new_string(STR("ObjectType"), ensure_str(Filter::ObjectTypeFilter::s_internal_object_type));
         }
+                    {
+                // Class fullname contains filter
+                auto& class_fullname_filter = json_filters.new_object();
+                class_fullname_filter.new_string(STR("FilterName"), Filter::ClassFullnameContains::s_debug_name);
+                auto& filter_data = class_fullname_filter.new_object(STR("FilterData"));
+                filter_data.new_string(STR("SearchTerm"), ensure_str(Filter::ClassFullnameContains::s_internal_search_term));
+            }
+            {
+                // Hide pre-clear objects filter
+                auto& hide_clear_filter = json_filters.new_object();
+                hide_clear_filter.new_string(STR("FilterName"), Filter::HidePreClearObjects::s_debug_name);
+                auto& filter_data = hide_clear_filter.new_object(STR("FilterData"));
+                filter_data.new_bool(STR("Enabled"), Filter::HidePreClearObjects::s_enabled);
+                filter_data.new_number(STR("ClearObjectCount"), Filter::HidePreClearObjects::s_clear_object_count);
+            }
 
         auto json_file = File::open(StringType{UE4SSProgram::get_program().get_working_directory()} + fmt::format(STR("\\liveview\\filters.meta.json")),
                                     File::OpenFor::Writing,
@@ -538,6 +559,15 @@ namespace RC::GUI
             else if (filter_name == Filter::ObjectTypeFilter::s_debug_name)
             {
                 Filter::ObjectTypeFilter::s_internal_object_type = to_string(filter_data.get<JSON::String>(STR("ObjectType")).get_view());
+            }
+            else if (filter_name == Filter::ClassFullnameContains::s_debug_name)
+            {
+                Filter::ClassFullnameContains::s_internal_search_term = to_string(filter_data.get<JSON::String>(STR("SearchTerm")).get_view());
+            }
+            else if (filter_name == Filter::HidePreClearObjects::s_debug_name)
+            {
+                Filter::HidePreClearObjects::s_enabled = filter_data.get<JSON::Bool>(STR("Enabled")).get();
+                Filter::HidePreClearObjects::s_clear_object_count = filter_data.get<JSON::Number>(STR("ClearObjectCount")).get<int32_t>();
             }
 
             return LoopAction::Continue;
@@ -3594,7 +3624,13 @@ namespace RC::GUI
         }
 
         // Update this text if corresponding button's text changes. Textinput width = Spacing + Window margin + Button padding + Button text width
-        ImGui::PushItemWidth(-(8.0f + 16.0f + ImGui::GetStyle().FramePadding.x * 2.0f + ImGui::CalcTextSize(ICON_FA_COPY " Copy search result").x));
+        // Calculate width for Copy + Clear/Restore buttons (use larger of Clear/Restore for consistent layout)
+        float copy_button_width = ImGui::CalcTextSize(ICON_FA_COPY " Copy search result").x;
+        float clear_button_width = ImGui::CalcTextSize(ICON_FA_MINUS " Clear").x;
+        float restore_button_width = ImGui::CalcTextSize(ICON_FA_UNDO " Restore").x;
+        float second_button_width = std::max(clear_button_width, restore_button_width);
+        float buttons_width = copy_button_width + second_button_width + ImGui::GetStyle().ItemSpacing.x;
+        ImGui::PushItemWidth(-(8.0f + 16.0f + ImGui::GetStyle().FramePadding.x * 4.0f + buttons_width));
         bool push_inactive_text_color = !m_search_field_cleared;
         if (push_inactive_text_color)
         {
@@ -3811,6 +3847,25 @@ namespace RC::GUI
                     // Later we'll add case conversion and other processing here
                 }
 
+                // Row 8.5 - Object Path Contains Filter  
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::Text("Object path contains");
+                ImGui::TableNextColumn();
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+                if (ImGui::InputText("##ClassFullnameContains", &Filter::ClassFullnameContains::s_internal_search_term))
+                {
+                    // Search term updated - filter will apply automatically
+                }
+                if (ImGui::IsItemHovered())
+                {
+                    ImGui::BeginTooltip();
+                    ImGui::Text("Filter by object path (e.g., 'SlaveArm', 'GuardArm', 'BP_Stardust')");
+                    ImGui::Text("Searches in full object paths like '/Game/Blueprints/BP_SlaveArm_C'");
+                    ImGui::Text("Case-insensitive partial matching");
+                    ImGui::EndTooltip();
+                }
+
                 // Row 9 - Object Type Filter
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
@@ -3987,6 +4042,40 @@ namespace RC::GUI
             ImGui::SetClipboardText(to_string(result).c_str());
         }
 
+        // Clear/Restore buttons for Live View workflow
+        ImGui::SameLine();
+        if (Filter::HidePreClearObjects::is_clear_mode_enabled())
+        {
+            // Clear mode is active - show restore button and status
+            if (ImGui::Button(ICON_FA_UNDO " Restore"))
+            {
+                Filter::HidePreClearObjects::disable_clear_mode();
+                Output::send(STR("Live View: Restored all objects\n"));
+            }
+            if (ImGui::IsItemHovered())
+            {
+                ImGui::BeginTooltip();
+                ImGui::Text("Show all objects again (including {} hidden)", Filter::HidePreClearObjects::get_clear_count());
+                ImGui::EndTooltip();
+            }
+        }
+        else
+        {
+            // Normal mode - show clear button
+            if (ImGui::Button(ICON_FA_MINUS " Clear"))
+            {
+                Filter::HidePreClearObjects::enable_clear_mode();
+                Output::send(STR("Live View: Cleared {} existing objects. Showing only new objects.\n"), Filter::HidePreClearObjects::get_clear_count());
+            }
+            if (ImGui::IsItemHovered())
+            {
+                ImGui::BeginTooltip();
+                ImGui::Text("Hide all current objects - only show newly created ones");
+                ImGui::Text("Perfect for debugging: perform action -> see only new objects");
+                ImGui::EndTooltip();
+            }
+        }
+
         // Y - Windows title bar offset - Bottom window margin - Splitter height
         auto split_pane_height = ImGui::GetContentRegionAvail().y - 31.0f - 8.0f - 4.0f;
         if (m_bottom_size > 0 && m_bottom_size + m_top_size != split_pane_height)
@@ -4107,7 +4196,12 @@ namespace RC::GUI
                         // Skip destroyed/invalid objects here
                         if (!obj->IsUnreachable())
                         {
-                            objects_to_draw.push_back(obj->GetUObject());
+                            UObject* object = obj->GetUObject();
+                            // Apply filters (including our HidePreClearObjects filter)
+                            if (!filter_out_objects(object))
+                            {
+                                objects_to_draw.push_back(object);
+                            }
                         }
                     }
                 }

@@ -10,9 +10,11 @@ Personal enhanced fork of [UE4SS](https://github.com/Re-UE4SS/RE-UE4SS) with Qua
 **Live View:**  
 - Object Type filter (Function, Class, Package, Enum, etc.) - specify which objects you want to search for in live view 
 - Contains Property filter  - does obj contain a certain property name - substr search not equality 
+- Object Path Contains filter - filter by object path (e.g., 'SlaveArm', 'GuardArm', 'BP_Stardust') with case-insensitive partial matching
 - Has Any Properties filter (hide empty containers/type definitions)
 - Enhanced property search - filter properties list for a specific property
 - Sticky headers when scrolling properties
+- **Clear/Restore Live View** - hide all current objects to show only newly created ones (perfect for action-based debugging)
 
 **Lua Global Functions:**
 - `FindClassNamesContaining(searchTerm)` - Find classes containing search term
